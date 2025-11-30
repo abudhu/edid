@@ -79,18 +79,27 @@ else
 fi
 echo ""
 
-# 3a. Check kernel command line and boot process
+# 3a. Check kernel module load status
 print_status "Checking kernel module load status..."
 if lsmod | grep -q drm_kms_helper; then
     print_success "drm_kms_helper module is loaded"
-    
-    # Check dmesg for EDID loading messages
-    if command -v dmesg >/dev/null 2>&1; then
-        print_status "Checking kernel messages for EDID..."
-        dmesg | grep -i edid | tail -5 || print_warning "No EDID messages in kernel log"
+elif lsmod | grep -q drm; then
+    print_warning "DRM is loaded but drm_kms_helper may be built-in"
+    print_status "Checking if drm_kms_helper is built into kernel..."
+    if [[ -d /sys/module/drm_kms_helper ]]; then
+        print_success "drm_kms_helper is available (built-in to kernel)"
+    else
+        print_error "drm_kms_helper not found"
     fi
 else
-    print_warning "drm_kms_helper module not loaded"
+    print_warning "DRM subsystem not detected - are you in a graphical session?"
+fi
+
+# Check dmesg for EDID loading messages
+if command -v dmesg >/dev/null 2>&1; then
+    print_status "Checking kernel messages for EDID..."
+    echo "Recent EDID-related messages:"
+    sudo dmesg | grep -i "edid\|firmware" | grep -i "drm\|card\|HDMI\|DP" | tail -10 || print_warning "No EDID messages in kernel log"
 fi
 echo ""
 
