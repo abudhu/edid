@@ -86,41 +86,42 @@ def create_ultrawide_edid(refresh_rate=60):
     vertical_sync_offset = 3
     vertical_sync_pulse = 5
     
-    sync_low = (horizontal_sync_offset & 0xFF)
-    sync_high1 = (horizontal_sync_pulse & 0xFF)
-    sync_high2 = ((vertical_sync_offset & 0x0F) << 4) | (vertical_sync_pulse & 0x0F)
-    sync_high3 = ((horizontal_sync_offset >> 2) & 0xC0) | ((horizontal_sync_pulse >> 4) & 0x30) | ((vertical_sync_offset >> 2) & 0x0C) | ((vertical_sync_pulse >> 4) & 0x03)
+    h_sync_offset_low = horizontal_sync_offset & 0xFF
+    h_sync_pulse_low = horizontal_sync_pulse & 0xFF
+    v_sync_combined = ((vertical_sync_offset & 0x0F) << 4) | (vertical_sync_pulse & 0x0F)
+    sync_high = ((horizontal_sync_offset >> 8) & 0xC0) | ((horizontal_sync_pulse >> 8) & 0x30) | ((vertical_sync_offset >> 4) & 0x0C) | ((vertical_sync_pulse >> 4) & 0x03)
     
     # Display size in mm (MSI MPG 491CQPX actual dimensions)
-    horizontal_size = 0x97  # 1196.7mm / 10 = 119.67 -> 0x77 low byte
-    vertical_size = 0x21   # 339.2mm / 10 = 33.92 -> 0x21 low byte
+    horizontal_size_low = 0x97  # 1196.7mm / 10 = 119.67 -> 0x77 low byte
+    vertical_size_low = 0x21   # 339.2mm / 10 = 33.92 -> 0x21 low byte
+    size_high = 0x00  # Upper bits of sizes
     
     detailed_timing_1 = [
-        pixel_clock[0], pixel_clock[1],  # Pixel clock
-        horizontal_active_low,           # Horizontal active low
-        horizontal_blanking_low,         # Horizontal blanking low
-        horizontal_high,                 # Horizontal active/blanking high
-        vertical_active_low,             # Vertical active low
-        vertical_blanking_low,           # Vertical blanking low
-        vertical_high,                   # Vertical active/blanking high
-        sync_low,                        # Horizontal sync offset low
-        sync_high1,                      # Horizontal sync pulse width low
-        sync_high2,                      # Vertical sync offset/pulse low
-        sync_high3,                      # Horizontal/vertical sync high
-        horizontal_size,                 # Horizontal image size low
-        vertical_size,                   # Vertical image size low
-        0x00,                           # Horizontal/vertical image size high
-        0x00,                           # Horizontal border
-        0x00,                           # Vertical border
-        0x1E                            # Flags (digital separate sync)
+        pixel_clock[0], pixel_clock[1],  # Bytes 0-1: Pixel clock
+        horizontal_active_low,           # Byte 2: Horizontal active low
+        horizontal_blanking_low,         # Byte 3: Horizontal blanking low
+        horizontal_high,                 # Byte 4: Horizontal active/blanking high
+        vertical_active_low,             # Byte 5: Vertical active low
+        vertical_blanking_low,           # Byte 6: Vertical blanking low
+        vertical_high,                   # Byte 7: Vertical active/blanking high
+        h_sync_offset_low,               # Byte 8: Horizontal sync offset low
+        h_sync_pulse_low,                # Byte 9: Horizontal sync pulse width low
+        v_sync_combined,                 # Byte 10: Vertical sync offset/pulse low
+        sync_high,                       # Byte 11: Horizontal/vertical sync high
+        horizontal_size_low,             # Byte 12: Horizontal image size low
+        vertical_size_low,               # Byte 13: Vertical image size low
+        size_high,                       # Byte 14: Horizontal/vertical image size high
+        0x00,                           # Byte 15: Horizontal border
+        0x00,                           # Byte 16: Vertical border
+        0x1E                            # Byte 17: Flags (digital separate sync)
     ]
     
     # Detailed timing descriptor 2: Display name
     display_name = [
         0x00, 0x00, 0x00, 0xFC, 0x00,  # Display name tag
-        0x4D, 0x50, 0x47, 0x20, 0x34,  # "MPG 4"
-        0x39, 0x31, 0x43, 0x51, 0x50,  # "91CQP"
-        0x58, 0x0A, 0x20, 0x20, 0x20   # "X\n   "
+        0x4D, 0x50, 0x47, 0x34, 0x39,  # "MPG49"
+        0x31, 0x43, 0x51, 0x50, 0x58,  # "1CQPX"
+        0x0A, 0x20, 0x20              # "\n  "
     ]
     
     # Detailed timing descriptor 3: Range limits
@@ -128,7 +129,7 @@ def create_ultrawide_edid(refresh_rate=60):
         0x00, 0x00, 0x00, 0xFD, 0x00,  # Range limits tag
         0x30, 0xF0, 0x1E, 0x87, 0x3C,  # V freq 48-240Hz, H freq 30-135kHz
         0x00, 0x0A, 0x20, 0x20, 0x20,  # Max pixel clock 600MHz
-        0x20, 0x20, 0x20, 0x20, 0x20   # Padding
+        0x20, 0x20, 0x20              # Padding
     ]
     
     # Detailed timing descriptor 4: Dummy/Unused
