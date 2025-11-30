@@ -184,9 +184,17 @@ if command -v rpm-ostree >/dev/null 2>&1; then
     sudo tee "$DRACUT_CONF_DIR/edid.conf" > /dev/null << EOF
 # Include custom EDID in initramfs
 install_items+=" $EDID_DIR/ultrawide_5120x1440.bin "
+install_items+=" $EDID_DIR/msi_mpg491cqpx_60hz.bin "
+install_items+=" $EDID_DIR/msi_mpg491cqpx_120hz.bin "
+install_items+=" $EDID_DIR/msi_mpg491cqpx_144hz.bin "
+install_items+=" $EDID_DIR/msi_mpg491cqpx_240hz.bin "
 EOF
 
     print_success "Created dracut configuration for EDID"
+    
+    print_warning "Note: If drm_kms_helper is built into your kernel, you'll need to add"
+    print_warning "the kernel parameter using rpm-ostree kargs. The configure_msi.sh script"
+    print_warning "will handle this automatically."
 fi
 
 # Create a script to help identify the correct connector

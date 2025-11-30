@@ -215,6 +215,45 @@ options drm_kms_helper edid_firmware=$connector:edid/$edid_file
 EOF
     
     print_success "Updated kernel module configuration for ${refresh_rate}Hz"
+    
+    # For rpm-ostree systems with built-in drm_kms_helper, also set kernel parameter
+    if command -v rpm-ostree >/dev/null 2>&1; then
+        print_status "Checking if drm_kms_helper kernel parameter is needed..."
+        
+        # Check if drm_kms_helper parameter file exists
+        if [[ ! -f /sys/module/drm_kms_helper/parameters/edid_firmware ]]; then
+            print_status "drm_kms_helper is built into kernel, adding kernel parameter..."
+            
+            # Remove any existing drm.edid_firmware kernel parameter
+            if rpm-ostree kargs | grep -q "drm.edid_firmware"; then
+                print_status "Removing old kernel parameter..."
+                sudo rpm-ostree kargs --delete-if-present="drm.edid_firmware"
+            fi
+            
+            # Add the new kernel parameter
+            print_status "Adding kernel parameter: drm.edid_firmware=$connector:edid/$edid_file"
+            sudo rpm-ostree kargs --append="drm.edid_firmware=$connector:edid/$edid_file"
+            
+            # Update dracut config to include this specific EDID file
+            if [[ ! -f /etc/dracut.conf.d/edid.conf ]] || ! grep -q "$edid_file" /etc/dracut.conf.d/edid.conf; then
+                print_status "Updating dracut configuration..."
+                sudo mkdir -p /etc/dracut.conf.d
+                
+                # Ensure the selected file is in dracut config
+                if [[ -f /etc/dracut.conf.d/edid.conf ]]; then
+                    if ! grep -q "$edid_file" /etc/dracut.conf.d/edid.conf; then
+                        echo "install_items+=\" /etc/firmware/edid/$edid_file \"" | sudo tee -a /etc/dracut.conf.d/edid.conf > /dev/null
+                    fi
+                fi
+            fi
+            
+            print_success "Kernel parameter configured"
+            log_action "Added kernel parameter: drm.edid_firmware=$connector:edid/$edid_file"
+        else
+            print_success "drm_kms_helper is a loadable module, modprobe config will work"
+        fi
+    fi
+    
     print_warning "Reboot required to apply changes"
 }
 

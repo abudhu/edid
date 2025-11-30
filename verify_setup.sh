@@ -68,14 +68,28 @@ if [[ -f /sys/module/drm_kms_helper/parameters/edid_firmware ]]; then
         echo "  1. Check if modprobe.d config is correct:"
         echo "     cat /etc/modprobe.d/drm_kms_helper.conf"
         echo "  2. For Bazzite/immutable systems, rebuild initramfs:"
-        echo "     sudo dracut --force --regenerate-all"
-        echo "  3. Or update initramfs:"
         echo "     sudo rpm-ostree initramfs --enable"
-        echo "  4. Then reboot again"
+        echo "  3. Then reboot again"
     fi
 else
-    print_warning "EDID firmware parameter not yet loaded"
-    print_warning "Reboot required to load the configuration"
+    print_warning "drm_kms_helper parameter file not found"
+    print_warning "This means drm_kms_helper is built into the kernel"
+    echo ""
+    print_status "For built-in drm_kms_helper, check kernel command line:"
+    if grep -q "drm.edid_firmware" /proc/cmdline 2>/dev/null; then
+        karg=$(grep -o "drm.edid_firmware=[^ ]*" /proc/cmdline)
+        print_success "Kernel parameter is set: $karg"
+    else
+        print_error "Kernel parameter drm.edid_firmware is NOT set"
+        echo ""
+        print_status "To fix this on rpm-ostree systems:"
+        echo "  1. Get your connector from the display connectors section below"
+        echo "  2. Run: sudo rpm-ostree kargs --append=\"drm.edid_firmware=CONNECTOR:edid/EDID_FILE\""
+        echo "  3. Example: sudo rpm-ostree kargs --append=\"drm.edid_firmware=card0-DP-2:edid/msi_mpg491cqpx_144hz.bin\""
+        echo "  4. Reboot to apply"
+        echo ""
+        print_warning "Or use ./configure_msi.sh which will handle this automatically"
+    fi
 fi
 echo ""
 
@@ -175,29 +189,34 @@ echo ""
 # 7. Summary and next steps
 echo "=== Summary ==="
 if [[ -f "$MODPROBE_CONF" ]] && [[ -d "$EDID_DIR" ]]; then
+    # Check if parameter is loaded via sysfs or kernel cmdline
+    param_loaded=false
     if [[ -f /sys/module/drm_kms_helper/parameters/edid_firmware ]]; then
         edid_param=$(cat /sys/module/drm_kms_helper/parameters/edid_firmware)
         if [[ -n "$edid_param" && "$edid_param" != "(null)" ]]; then
-            print_success "Configuration is active and loaded!"
-            echo ""
-            echo "Next steps:"
-            echo "1. Check your display settings (GNOME Settings → Displays)"
-            echo "2. Enable the virtual display if it appears as disabled"
-            echo "3. Configure Moonlight to use 5120x1440 resolution"
-        else
-            print_warning "Configuration installed but not yet active"
-            echo ""
-            echo "Next steps:"
-            echo "1. Reboot your system to activate the configuration"
-            echo "2. After reboot, run this script again to verify"
-            echo "3. Enable the virtual display in display settings"
+            param_loaded=true
         fi
-    else
-        print_warning "Configuration installed but kernel parameter not loaded"
+    elif grep -q "drm.edid_firmware" /proc/cmdline 2>/dev/null; then
+        param_loaded=true
+    fi
+    
+    if $param_loaded; then
+        print_success "Configuration is active and loaded!"
         echo ""
         echo "Next steps:"
-        echo "1. Reboot your system"
-        echo "2. Run this script again after reboot"
+        echo "1. Check your display settings (GNOME Settings → Displays)"
+        echo "2. Enable the virtual display if it appears as disabled"
+        echo "3. Configure Moonlight to use 5120x1440 resolution"
+    else
+        print_warning "Configuration installed but not yet active"
+        echo ""
+        echo "Next steps:"
+        echo "1. If drm_kms_helper is built into kernel, you need to add kernel parameter:"
+        echo "   sudo rpm-ostree kargs --append=\"drm.edid_firmware=CONNECTOR:edid/EDID_FILE\""
+        echo "   (Or use ./configure_msi.sh which handles this automatically)"
+        echo "2. Reboot your system to activate the configuration"
+        echo "3. After reboot, run this script again to verify"
+        echo "4. Enable the virtual display in display settings"
     fi
 else
     print_error "Configuration incomplete"
