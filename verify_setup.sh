@@ -62,11 +62,35 @@ if [[ -f /sys/module/drm_kms_helper/parameters/edid_firmware ]]; then
         print_success "EDID firmware parameter is loaded: $edid_param"
     else
         print_warning "EDID firmware parameter exists but is empty"
-        print_warning "This is normal before reboot"
+        print_warning "This means the kernel module config was not applied"
+        echo ""
+        print_status "Troubleshooting steps:"
+        echo "  1. Check if modprobe.d config is correct:"
+        echo "     cat /etc/modprobe.d/drm_kms_helper.conf"
+        echo "  2. For Bazzite/immutable systems, rebuild initramfs:"
+        echo "     sudo dracut --force --regenerate-all"
+        echo "  3. Or update initramfs:"
+        echo "     sudo rpm-ostree initramfs --enable"
+        echo "  4. Then reboot again"
     fi
 else
     print_warning "EDID firmware parameter not yet loaded"
     print_warning "Reboot required to load the configuration"
+fi
+echo ""
+
+# 3a. Check kernel command line and boot process
+print_status "Checking kernel module load status..."
+if lsmod | grep -q drm_kms_helper; then
+    print_success "drm_kms_helper module is loaded"
+    
+    # Check dmesg for EDID loading messages
+    if command -v dmesg >/dev/null 2>&1; then
+        print_status "Checking kernel messages for EDID..."
+        dmesg | grep -i edid | tail -5 || print_warning "No EDID messages in kernel log"
+    fi
+else
+    print_warning "drm_kms_helper module not loaded"
 fi
 echo ""
 
