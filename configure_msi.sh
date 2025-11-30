@@ -26,30 +26,105 @@ log_action() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
 }
 
+get_gpu_info() {
+    local card=$1
+    local vendor="unknown"
+    local device_name="unknown"
+    
+    if [[ -f "/sys/class/drm/$card/device/vendor" ]]; then
+        local vendor_id=$(cat "/sys/class/drm/$card/device/vendor" 2>/dev/null)
+        case "$vendor_id" in
+            "0x10de") vendor="NVIDIA" ;;
+            "0x1002") vendor="AMD" ;;
+            "0x8086") vendor="Intel (iGPU)" ;;
+            *) vendor="$vendor_id" ;;
+        esac
+    fi
+    
+    # Try to get device name from uevent or modalias
+    if [[ -f "/sys/class/drm/$card/device/uevent" ]]; then
+        device_name=$(grep "PCI_SLOT_NAME" "/sys/class/drm/$card/device/uevent" 2>/dev/null | cut -d'=' -f2 || echo "unknown")
+    fi
+    
+    echo "$vendor ($device_name)"
+}
+
+list_gpu_cards() {
+    print_status "Available GPU cards:"
+    echo ""
+    
+    local cards=()
+    for card_path in /sys/class/drm/card[0-9]*; do
+        if [[ -d "$card_path/device" ]]; then
+            local card=$(basename "$card_path")
+            # Skip card[0-9]-* entries, only show card[0-9]
+            if [[ $card =~ ^card[0-9]+$ ]]; then
+                local gpu_info=$(get_gpu_info "$card")
+                echo "  $card: $gpu_info"
+                cards+=("$card")
+            fi
+        fi
+    done
+    echo ""
+    
+    # Highlight which is likely discrete vs integrated
+    for card in "${cards[@]}"; do
+        local vendor_id=$(cat "/sys/class/drm/$card/device/vendor" 2>/dev/null || echo "")
+        if [[ "$vendor_id" == "0x8086" ]]; then
+            print_warning "$card appears to be integrated GPU (Intel)"
+        elif [[ "$vendor_id" == "0x10de" ]] || [[ "$vendor_id" == "0x1002" ]]; then
+            print_success "$card appears to be discrete GPU (NVIDIA/AMD)"
+        fi
+    done
+    echo ""
+}
+
 detect_connector() {
     print_status "Auto-detecting available connectors..."
     
     local connectors=()
+    local discrete_connectors=()
+    
     for connector in /sys/class/drm/card*/card*/status; do
         if [[ -f "$connector" ]]; then
-            connector_name=$(echo "$connector" | sed 's/.*\/\(.*\)\/status/\1/')
+            # Extract full connector name including card prefix (e.g., card1-HDMI-A-1)
+            connector_name=$(echo "$connector" | sed 's/.*\/card\([0-9]\)-\(.*\)\/status/card\1-\2/')
             status=$(cat "$connector" 2>/dev/null || echo "unknown")
+            
             if [[ "$status" == "disconnected" ]]; then
                 connectors+=("$connector_name")
+                
+                # Check if this connector belongs to a discrete GPU (non-Intel)
+                local card=$(echo "$connector_name" | grep -o 'card[0-9]\+')
+                if [[ -f "/sys/class/drm/$card/device/vendor" ]]; then
+                    local vendor_id=$(cat "/sys/class/drm/$card/device/vendor" 2>/dev/null)
+                    # Prioritize NVIDIA (0x10de) and AMD (0x1002) over Intel (0x8086)
+                    if [[ "$vendor_id" == "0x10de" ]] || [[ "$vendor_id" == "0x1002" ]]; then
+                        discrete_connectors+=("$connector_name")
+                    fi
+                fi
             fi
         fi
     done
     
-    if [[ ${#connectors[@]} -eq 0 ]]; then
-        print_warning "No disconnected connectors found. Using HDMI-A-1 as default."
-        echo "HDMI-A-1"
-    else
+    # Prefer discrete GPU connectors if available
+    if [[ ${#discrete_connectors[@]} -gt 0 ]]; then
+        echo "${discrete_connectors[0]}"
+    elif [[ ${#connectors[@]} -gt 0 ]]; then
+        print_warning "No discrete GPU connectors found, using first available."
         echo "${connectors[0]}"
+    else
+        print_warning "No disconnected connectors found. Using card0-HDMI-A-1 as default."
+        echo "card0-HDMI-A-1"
     fi
 }
 
 show_current_config() {
     echo "=== Current Configuration ==="
+    echo ""
+    
+    # Show GPU cards first
+    list_gpu_cards
     
     if [[ -f "$MODPROBE_CONF" ]]; then
         echo "Kernel module configuration:"
@@ -151,13 +226,28 @@ interactive_setup() {
     esac
     
     echo ""
-    print_status "Available display connectors:"
-    ./check_connectors.sh 2>/dev/null || {
-        echo "HDMI-A-1 (common)"
-        echo "HDMI-A-2 (alternate)"
-        echo "DP-1 (DisplayPort)"
-        echo "DP-2 (alternate DisplayPort)"
-    }
+    list_gpu_cards
+    
+    print_status "Available display connectors by card:"
+    for card_path in /sys/class/drm/card[0-9]*; do
+        if [[ -d "$card_path" ]]; then
+            local card=$(basename "$card_path")
+            if [[ $card =~ ^card[0-9]+$ ]]; then
+                local gpu_info=$(get_gpu_info "$card")
+                echo "  $card [$gpu_info]:"
+                for connector in "$card_path"/$card-*/status; do
+                    if [[ -f "$connector" ]]; then
+                        local conn_name=$(echo "$connector" | sed "s/.*\/$card-\(.*\)\/status/\1/")
+                        local status=$(cat "$connector" 2>/dev/null)
+                        echo "    $card-$conn_name: $status"
+                    fi
+                done
+            fi
+        fi
+    done
+    echo ""
+    print_warning "Choose a DISCONNECTED connector from your DISCRETE GPU (NVIDIA/AMD)."
+    print_warning "Avoid Intel iGPU connectors unless that's your intended target."
     echo ""
     
     # Auto-detect connector

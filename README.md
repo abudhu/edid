@@ -51,6 +51,24 @@ When streaming games via Moonlight, you may want to use your ultrawide monitor's
 - **AMD**: Full support on recent kernels (5.15+), excellent Wayland compatibility
 - **Intel**: Full support on recent kernels, excellent Wayland compatibility
 
+### Discrete GPU vs Integrated GPU (iGPU)
+
+**IMPORTANT**: If your system has both a discrete GPU (NVIDIA/AMD) and an integrated GPU (Intel), you need to ensure the EDID is loaded on the correct GPU.
+
+The setup scripts now automatically:
+- Detect and display all GPU cards with their vendors
+- Identify which cards are discrete GPUs vs iGPUs
+- Prioritize discrete GPU connectors during auto-detection
+- Show connectors grouped by their GPU card
+
+When configuring, **always choose a connector from your discrete GPU** (NVIDIA/AMD), not the Intel iGPU, unless you specifically intend to use the iGPU for streaming.
+
+Example connector names:
+- `card0-HDMI-A-1` - HDMI port on card0
+- `card1-DP-1` - DisplayPort on card1
+
+The card number matters - make sure you select a connector from the correct card!
+
 ## Wayland Compositor Notes
 
 For **Sway** users, you may need to reload the configuration after enabling the display:
