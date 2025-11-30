@@ -68,10 +68,16 @@ if [[ $KERNEL_MAJOR -lt 5 ]] || [[ $KERNEL_MAJOR -eq 5 && $KERNEL_MINOR -lt 10 ]
     print_warning "Kernel version $KERNEL_VERSION may not fully support custom EDID. Recommended: 5.10+"
 fi
 
-# Check if firmware directory exists
-if [[ ! -d "/usr/lib/firmware" ]]; then
-    print_error "Firmware directory /usr/lib/firmware not found. Your system may not support custom EDID."
-    exit 1
+# Check if we're on an immutable system (Bazzite/Fedora Atomic)
+if command -v rpm-ostree >/dev/null 2>&1; then
+    FIRMWARE_BASE="/etc/firmware"
+    print_status "Detected immutable system, using $FIRMWARE_BASE"
+else
+    FIRMWARE_BASE="/usr/lib/firmware"
+    if [[ ! -d "$FIRMWARE_BASE" ]]; then
+        print_error "Firmware directory $FIRMWARE_BASE not found. Your system may not support custom EDID."
+        exit 1
+    fi
 fi
 
 print_status "Setting up custom EDID for 5120x1440 ultrawide resolution..."
@@ -90,19 +96,32 @@ fi
 # Ask user which refresh rate they prefer
 echo ""
 print_status "Available EDID files with different refresh rates:"
-for file in msi_mpg491cqpx_*.bin; do
-    if [[ -f "$file" ]]; then
-        echo "  - $file"
-    fi
-done
+echo "  1) 60Hz  - Standard refresh rate, best compatibility"
+echo "  2) 120Hz - High refresh rate"
+echo "  3) 144Hz - Gaming optimized"
+echo "  4) 240Hz - Maximum refresh rate (requires powerful GPU)"
 echo ""
-print_status "The setup will use msi_mpg491cqpx_60hz.bin by default."
-print_status "You can manually replace it later with a higher refresh rate version."
+read -p "Select default refresh rate (1-4) [1]: " refresh_choice
+refresh_choice=${refresh_choice:-1}
+
+case $refresh_choice in
+    1) selected_hz="60" ;;
+    2) selected_hz="120" ;;
+    3) selected_hz="144" ;;
+    4) selected_hz="240" ;;
+    *)
+        print_warning "Invalid choice, defaulting to 60Hz"
+        selected_hz="60"
+        ;;
+esac
+
+selected_file="msi_mpg491cqpx_${selected_hz}hz.bin"
+print_success "Selected ${selected_hz}Hz refresh rate"
 echo ""
 
 # Create firmware directory for EDID files
-EDID_DIR="/usr/lib/firmware/edid"
-print_status "Creating EDID firmware directory..."
+EDID_DIR="$FIRMWARE_BASE/edid"
+print_status "Creating EDID firmware directory at $EDID_DIR..."
 sudo mkdir -p "$EDID_DIR"
 
 # Copy EDID files to firmware directory
@@ -122,8 +141,13 @@ for file in msi_mpg491cqpx_*.bin; do
     fi
 done
 
-# Also copy the default symlink/copy
-sudo cp ultrawide_5120x1440.bin "$EDID_DIR/"
+# Copy the selected refresh rate as the default
+if [[ ! -f "$selected_file" ]]; then
+    print_error "Selected EDID file $selected_file not found!"
+    exit 1
+fi
+
+sudo cp "$selected_file" "$EDID_DIR/ultrawide_5120x1440.bin"
 sudo chmod 644 "$EDID_DIR/ultrawide_5120x1440.bin"
 
 # Verify default file
@@ -132,7 +156,7 @@ if [[ ! -f "$EDID_DIR/ultrawide_5120x1440.bin" ]] || [[ ! -r "$EDID_DIR/ultrawid
     exit 1
 fi
 
-print_success "Installed ultrawide_5120x1440.bin (default 60Hz)"
+print_success "Installed ultrawide_5120x1440.bin (${selected_hz}Hz default)"
 
 # Create kernel module configuration for DRM
 print_status "Configuring DRM kernel module..."
@@ -157,9 +181,9 @@ if command -v rpm-ostree >/dev/null 2>&1; then
     DRACUT_CONF_DIR="/etc/dracut.conf.d"
     sudo mkdir -p "$DRACUT_CONF_DIR"
     
-    sudo tee "$DRACUT_CONF_DIR/edid.conf" > /dev/null << 'EOF'
+    sudo tee "$DRACUT_CONF_DIR/edid.conf" > /dev/null << EOF
 # Include custom EDID in initramfs
-install_items+=" /usr/lib/firmware/edid/ultrawide_5120x1440.bin "
+install_items+=" $EDID_DIR/ultrawide_5120x1440.bin "
 EOF
 
     print_success "Created dracut configuration for EDID"

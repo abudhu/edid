@@ -18,7 +18,12 @@ print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-EDID_DIR="/usr/lib/firmware/edid"
+# Detect firmware directory based on system type
+if command -v rpm-ostree >/dev/null 2>&1; then
+    EDID_DIR="/etc/firmware/edid"
+else
+    EDID_DIR="/usr/lib/firmware/edid"
+fi
 MODPROBE_CONF="/etc/modprobe.d/drm_kms_helper.conf"
 LOG_FILE="/tmp/msi_edid_config.log"
 
