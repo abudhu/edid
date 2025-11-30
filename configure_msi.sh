@@ -35,13 +35,36 @@ get_gpu_info() {
     local card=$1
     local vendor="unknown"
     local device_name="unknown"
+    local gpu_type=""
     
     if [[ -f "/sys/class/drm/$card/device/vendor" ]]; then
         local vendor_id=$(cat "/sys/class/drm/$card/device/vendor" 2>/dev/null)
+        
+        # Check boot_vga to determine if it's integrated
+        local boot_vga=""
+        if [[ -f "/sys/class/drm/$card/device/boot_vga" ]]; then
+            boot_vga=$(cat "/sys/class/drm/$card/device/boot_vga" 2>/dev/null)
+        fi
+        
         case "$vendor_id" in
-            "0x10de") vendor="NVIDIA" ;;
-            "0x1002") vendor="AMD" ;;
-            "0x8086") vendor="Intel (iGPU)" ;;
+            "0x10de") 
+                vendor="NVIDIA"
+                gpu_type=" [Discrete GPU]"
+                ;;
+            "0x1002") 
+                vendor="AMD"
+                # AMD can be either integrated or discrete
+                # boot_vga=1 often indicates iGPU, but check class as well
+                if [[ "$boot_vga" == "1" ]]; then
+                    gpu_type=" [Likely iGPU]"
+                else
+                    gpu_type=" [Discrete GPU]"
+                fi
+                ;;
+            "0x8086") 
+                vendor="Intel"
+                gpu_type=" [Integrated iGPU]"
+                ;;
             *) vendor="$vendor_id" ;;
         esac
     fi
@@ -51,7 +74,7 @@ get_gpu_info() {
         device_name=$(grep "PCI_SLOT_NAME" "/sys/class/drm/$card/device/uevent" 2>/dev/null | cut -d'=' -f2 || echo "unknown")
     fi
     
-    echo "$vendor ($device_name)"
+    echo "$vendor$gpu_type ($device_name)"
 }
 
 list_gpu_cards() {
@@ -72,15 +95,8 @@ list_gpu_cards() {
     done
     echo ""
     
-    # Highlight which is likely discrete vs integrated
-    for card in "${cards[@]}"; do
-        local vendor_id=$(cat "/sys/class/drm/$card/device/vendor" 2>/dev/null || echo "")
-        if [[ "$vendor_id" == "0x8086" ]]; then
-            print_warning "$card appears to be integrated GPU (Intel)"
-        elif [[ "$vendor_id" == "0x10de" ]] || [[ "$vendor_id" == "0x1002" ]]; then
-            print_success "$card appears to be discrete GPU (NVIDIA/AMD)"
-        fi
-    done
+    # Show recommendation
+    print_warning "For game streaming, typically use your NVIDIA discrete GPU, not AMD iGPU"
     echo ""
 }
 
@@ -99,12 +115,12 @@ detect_connector() {
             if [[ "$status" == "disconnected" ]]; then
                 connectors+=("$connector_name")
                 
-                # Check if this connector belongs to a discrete GPU (non-Intel)
+                # Check if this connector belongs to NVIDIA GPU
                 local card=$(echo "$connector_name" | grep -o 'card[0-9]\+')
                 if [[ -f "/sys/class/drm/$card/device/vendor" ]]; then
                     local vendor_id=$(cat "/sys/class/drm/$card/device/vendor" 2>/dev/null)
-                    # Prioritize NVIDIA (0x10de) and AMD (0x1002) over Intel (0x8086)
-                    if [[ "$vendor_id" == "0x10de" ]] || [[ "$vendor_id" == "0x1002" ]]; then
+                    # Prioritize NVIDIA (0x10de) - most common for game streaming
+                    if [[ "$vendor_id" == "0x10de" ]]; then
                         discrete_connectors+=("$connector_name")
                     fi
                 fi
@@ -112,11 +128,11 @@ detect_connector() {
         fi
     done
     
-    # Prefer discrete GPU connectors if available
+    # Prefer NVIDIA GPU connectors if available
     if [[ ${#discrete_connectors[@]} -gt 0 ]]; then
         echo "${discrete_connectors[0]}"
     elif [[ ${#connectors[@]} -gt 0 ]]; then
-        print_warning "No discrete GPU connectors found, using first available."
+        print_warning "No NVIDIA GPU connectors found, using first available."
         echo "${connectors[0]}"
     else
         print_warning "No disconnected connectors found. Using card0-HDMI-A-1 as default."
@@ -251,8 +267,8 @@ interactive_setup() {
         fi
     done
     echo ""
-    print_warning "Choose a DISCONNECTED connector from your DISCRETE GPU (NVIDIA/AMD)."
-    print_warning "Avoid Intel iGPU connectors unless that's your intended target."
+    print_warning "Choose a DISCONNECTED connector from your NVIDIA discrete GPU."
+    print_warning "Avoid AMD iGPU or Intel connectors unless specifically intended."
     echo ""
     
     # Auto-detect connector
